@@ -3,27 +3,43 @@ from asciimatics.screen import Screen
 import time
 from datetime import datetime
 import winsound
+import json
 
-# Software data
-__VERSION = "1.0.3"
+__VERSION__ = "1705.0.5"
+
+#---------------------------------------------------------------
+# DATA
+#---------------------------------------------------------------
+
+# JSON file loader
+def load_file_json(file_name):
+	with open(file_name, 'r') as _file:
+		content = _file.read()
+		content_dict = json.loads(content)
+		return content_dict
+
+# Config files
+data_file = "NanoSniffer.conf"
+config = load_file_json(data_file)
+
+# Settings
+_address = str(config["address"])
+__MONEY = str(config["currency"])
+
 # BASE_URLs
 
-_baseURL_GENERAL = "https://api.nanopool.org/v1/eth/user/"
-_baseURL_REPORTEDHASH = "https://api.nanopool.org/v1/eth/reportedhashrate/"
-_baseURL_OTHER = "https://api.nanopool.org/v1/eth/approximated_earnings/"
-__MONEY = "ETH"
-_cryptonatorAPI = "https://api.cryptonator.com/api/ticker/" #eth-usd/btc-usd
+_baseURL_GENERAL = "https://api.nanopool.org/v1/%s/user/" % __MONEY.lower()
+_baseURL_REPORTEDHASH = "https://api.nanopool.org/v1/%s/reportedhashrate/" % __MONEY.lower()
+_baseURL_OTHER = "https://api.nanopool.org/v1/%s/approximated_earnings/" % __MONEY.lower()
+_cryptonatorAPI = "https://api.cryptonator.com/api/ticker/" #$money$-usd/btc-usd
 
-# ADRESSES
-_address = "0xce8a88a97A7055B2a84D2b8d54b05F942d1e1c34"
-
-# SPECIFIC
+# User-Agent
 _headers = {"User-Agent": "Mozilla/5.0 (Windows NT 6.1; WOW64; rv:40.0) Gecko/20100101 Firefox/40.1"}
 
-# INFOS variables
+# INFOS dicts
 
 __miner_infos = dict(balance="0", old_balance="0", hashrate="0", old_hashrate="0", lastReportedHash="0", averageHashrate6H="0", USDmonth="0", USDday="0")
-__money_ticker = dict(eth_usd="0")
+__money_ticker = {"%s_usd" % __MONEY.lower() : 1}
 
 
 def __get_infos():
@@ -56,11 +72,11 @@ def __get_infos():
     __miner_infos["USDday"] = _JSON["data"]["day"]["dollars"]
 
     # Cours des monnaies
-    req = requests.get(_cryptonatorAPI + "eth-usd", headers=_headers)
+    req = requests.get(_cryptonatorAPI + "%s-usd" % __MONEY, headers=_headers)
     _JSON = req.json()
 
     # Modification des globales
-    __money_ticker["eth_usd"] = _JSON["ticker"]["price"]
+    __money_ticker["%s_usd" % __MONEY.lower()] = _JSON["ticker"]["price"]
 
 
     return
@@ -76,7 +92,7 @@ def update(screen):
     _history = []
     _beep = False
 
-    screen.print_at("Nanopool JSON Sniffer         -       Ethereum Pool         -     v" + __VERSION, 2, 1, Screen.COLOUR_YELLOW, Screen.A_BOLD)
+    screen.print_at(("Nanopool JSON Sniffer      -          %s Pool          -      v " % __MONEY) + __VERSION__, 2, 1, Screen.COLOUR_YELLOW, Screen.A_BOLD)
     screen.print_at("Address : " + _address, 3, 3, Screen.COLOUR_CYAN)
     screen.print_at("Press Q to exit()", 3, 24, Screen.COLOUR_WHITE)
     screen.print_at("Press R - Force refresh()", 45, 25, Screen.COLOUR_WHITE)
@@ -87,7 +103,7 @@ def update(screen):
     screen.print_at("Month : ", 30, 18, Screen.COLOUR_WHITE, Screen.A_BOLD)
     screen.print_at("Based on 6hrs Avg. Hashrate : ", 45, 18, Screen.COLOUR_WHITE, Screen.A_BOLD)
 
-    screen.print_at("ETH Price :", 45, 10, Screen.COLOUR_WHITE, Screen.A_BOLD)
+    screen.print_at("%s Price :" % __MONEY, 45, 10, Screen.COLOUR_WHITE, Screen.A_BOLD)
     screen.print_at("Balance Est.", 60, 10, Screen.COLOUR_WHITE, Screen.A_BOLD)
 
     screen.print_at("Last reported hashrate : ", 3, 7, Screen.COLOUR_WHITE)
@@ -156,11 +172,11 @@ def update(screen):
             # Average Hashrate / 6h
             screen.print_at(str(int(float(__miner_infos["averageHashrate6H"]))) + " Mh/s     ", 45, 19, Screen.COLOUR_CYAN)
 
-            # ETH Price in USD
-            screen.print_at(str(round(float(__money_ticker["eth_usd"]),2))+" USD        ", 45, 11, Screen.COLOUR_RED)
+            # Currency price in USD
+            screen.print_at(str(round(float(__money_ticker["%s_usd" % __MONEY.lower()]),2))+" USD        ", 45, 11, Screen.COLOUR_RED)
             
             # Balance estimation in USD
-            screen.print_at("~ " + str(round(float(__money_ticker["eth_usd"]) * float(__miner_infos["balance"]), 4)) + " USD   ", 60, 11, Screen.COLOUR_RED)
+            screen.print_at("~ " + str(round(float(__money_ticker["%s_usd" % __MONEY.lower()]) * float(__miner_infos["balance"]), 4)) + " USD   ", 60, 11, Screen.COLOUR_RED)
 
             for i in range(len(_history)):
                 # Lignes de l'historique
