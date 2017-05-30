@@ -5,11 +5,10 @@ from datetime import datetime
 import winsound
 import json
 
-__VERSION__ = "1705.0.6"
-
+__VERSION__ = "1705.0.7"
 
 # ---------------------------------------------------------------
-# DATA
+# CONFIG
 # ---------------------------------------------------------------
 
 # JSON file loader
@@ -19,7 +18,6 @@ def load_file_json(file_name):
 		content_dict = json.loads(content)
 		return content_dict
 
-
 # Config files
 data_file = "NanoSniffer.conf"
 config = load_file_json(data_file)
@@ -27,9 +25,14 @@ config = load_file_json(data_file)
 # Settings
 _address = str(config["address"])
 __MONEY = str(config["currency"])
+REFRESH_INTERVAL = config["refresh_interval"]
+BEEP_DEFAULT = config["beep"]
+
+# ---------------------------------------------------------------
+# Pool API
+# ---------------------------------------------------------------
 
 # BASE_URLs
-
 _baseURL_GENERAL = "https://api.nanopool.org/v1/%s/user/" % __MONEY.lower()
 _baseURL_REPORTEDHASH = "https://api.nanopool.org/v1/%s/reportedhashrate/" % __MONEY.lower()
 _baseURL_OTHER = "https://api.nanopool.org/v1/%s/approximated_earnings/" % __MONEY.lower()
@@ -40,64 +43,107 @@ _baseURL_PAYMENTS = "https://api.nanopool.org/v1/%s/payments/" % __MONEY.lower()
 _headers = {"User-Agent": "Mozilla/5.0 (Windows NT 6.1; WOW64; rv:40.0) Gecko/20100101 Firefox/40.1"}
 
 # INFOS dicts
-
-__miner_infos = dict(balance="0", old_balance="0", hashrate="0", old_hashrate="0", lastReportedHash="0",
-					 averageHashrate6H="0", USDmonth="0", USDday="0", payments = ["0", "0"])
+__miner_infos = dict(balance="0", old_balance="0", hashrate="0", old_hashrate="0", lastReportedHash="0", averageHashrate6H="0", USDmonth="0", USDday="0", payments = ["0", "0"])
 __money_ticker = {"%s_usd" % __MONEY.lower(): 1}
 
+# ---------------------------------------------------------------
+# Functions
+# ---------------------------------------------------------------
 
 def __get_infos():
 	# Declarations des globales
 	global __miner_infos
 
-	# General Infos
-	req = requests.get(_baseURL_GENERAL + _address, headers=_headers)
-	_JSON = req.json()
+	errors = []
+	
+	# General information
+	try:
+		req = requests.get(_baseURL_GENERAL + _address, headers=_headers)
+		if req.status_code != 200:
+			# error
+			errors.append({"success": False, "error": "Pool returned error %s" % req.status_code})
+		else:
+			_JSON = req.json()
+			# Modification des globales
+			__miner_infos["balance"] = _JSON["data"]["balance"]
+			__miner_infos["old_hashrate"] = __miner_infos["hashrate"]
+			__miner_infos["hashrate"] = _JSON["data"]["hashrate"]
+			__miner_infos["averageHashrate6H"] = _JSON["data"]["avgHashrate"]["h6"]
+	except:
+		# error
+		errors.append({"success": False, "error": "Can not connect to the pool (address: %s)" % _baseURL_GENERAL})
 
-	# Modification des globales
-	__miner_infos["balance"] = _JSON["data"]["balance"]
-	__miner_infos["old_hashrate"] = __miner_infos["hashrate"]
-	__miner_infos["hashrate"] = _JSON["data"]["hashrate"]
-	__miner_infos["averageHashrate6H"] = _JSON["data"]["avgHashrate"]["h6"]
+	# Hash infrmation
+	try:
+		req = requests.get(_baseURL_REPORTEDHASH + _address, headers=_headers)
+		if req.status_code != 200:
+			# error
+			errors.append({"success": False, "error": "Pool returned error %s" % req.status_code})
+		else:
+			_JSON = req.json()
+			# Modification des globales
+			__miner_infos["lastReportedHash"] = _JSON["data"]
+	except:
+		# error
+		errors.append({"success": False, "error": "Can not connect to the pool (address: %s)" % _baseURL_REPORTEDHASH})
+		
+	
+	# Other information
+	try:
+		req = requests.get(_baseURL_OTHER + __miner_infos["averageHashrate6H"], headers=_headers)
+		if req.status_code != 200:
+			# error
+			errors.append({"success": False, "error": "Pool returned error %s" % req.status_code})
+		else:
+			_JSON = req.json()
+			# Modification des globales
+			__miner_infos["USDmonth"] = _JSON["data"]["month"]["dollars"]
+			__miner_infos["USDday"] = _JSON["data"]["day"]["dollars"]
+	except:
+		# error
+		errors.append({"success": False, "error": "Can not connect to the pool (address: %s)" % _baseURL_REPORTEDHASH})
 
-	# General Infos
-	req = requests.get(_baseURL_REPORTEDHASH + _address, headers=_headers)
-	_JSON = req.json()
-
-	# Modification des globales
-	__miner_infos["lastReportedHash"] = _JSON["data"]
-
-	# General Infos
-	req = requests.get(_baseURL_OTHER + __miner_infos["averageHashrate6H"], headers=_headers)
-	_JSON = req.json()
-
-	# Modification des globales
-	__miner_infos["USDmonth"] = _JSON["data"]["month"]["dollars"]
-	__miner_infos["USDday"] = _JSON["data"]["day"]["dollars"]
-
-	# Cours des monnaies
-	req = requests.get(_cryptonatorAPI + "%s-usd" % __MONEY, headers=_headers)
-	_JSON = req.json()
-
-	# Modification des globales
-	__money_ticker["%s_usd" % __MONEY.lower()] = _JSON["ticker"]["price"]
-
+	# Crypto tickers
+	try:
+		req = requests.get(_cryptonatorAPI + "%s-usd" % __MONEY, headers=_headers)
+		if req.status_code != 200:
+			# error
+			errors.append({"success": False, "error": "Pool returned error %s" % req.status_code})
+		else:
+			_JSON = req.json()
+			# Modification des globales
+			__money_ticker["%s_usd" % __MONEY.lower()] = _JSON["ticker"]["price"]
+	except:
+		# error
+		errors.append({"success": False, "error": "Can not connect to the pool (address: %s)" % _baseURL_REPORTEDHASH})
 
 	# Derniers paiements
-	req = requests.get(_baseURL_PAYMENTS + _address, headers=_headers)
-	_JSON = req.json()
-
-	if len(_JSON["data"]) > 0:
-		if len(_JSON["data"]) > 1:
-			__miner_infos["payments"][0] = "%0.4f" % _JSON["data"][0]["amount"]
-			__miner_infos["payments"][1] = "%0.4f" % _JSON["data"][1]["amount"]
+	try:
+		req = requests.get(_baseURL_PAYMENTS + _address, headers=_headers)
+		if req.status_code != 200:
+			# error
+			errors.append({"success": False, "error": "Pool returned error %s" % req.status_code})
 		else:
-			__miner_infos["payments"][0] = "%0.4f" % _JSON["data"][0]["amount"]
+			_JSON = req.json()			
+			if len(_JSON["data"]) > 0:
+				if len(_JSON["data"]) > 1:
+					__miner_infos["payments"][0] = "%0.4f" % _JSON["data"][0]["amount"]
+					__miner_infos["payments"][1] = "%0.4f" % _JSON["data"][1]["amount"]
+				else:
+					__miner_infos["payments"][0] = "%0.4f" % _JSON["data"][0]["amount"]
+			else:
+				__miner_infos["payments"][0] = "0"
+				__miner_infos["payments"][1] = "0"
+	except:
+		# error
+		errors.append({"success": False, "error": "Can not connect to the pool (address: %s)" % _baseURL_REPORTEDHASH})
+	
+	# Error handling
+	if len(errors) == 0:
+		result = {"success": True, "message": "yay!!!"}
 	else:
-		__miner_infos["payments"][0] = "0"
-		__miner_infos["payments"][1] = "0"
-
-	return
+		result = {"success": False, "errors": len(errors), "message": "Errors while trying\nto get data."}
+	return result
 
 
 def getfuckingnormaltime(timestamp):
@@ -108,7 +154,7 @@ def update(screen):
 	_seconds = 0
 	_refreshLimit = 0
 	_history = []
-	_beep = False
+	_beep = BEEP_DEFAULT
 
 	screen.print_at(("Nanopool JSON Sniffer       -         %s Pool        -       v " % __MONEY) + __VERSION__, 2, 1,
 					Screen.COLOUR_YELLOW, Screen.A_BOLD)
@@ -150,13 +196,21 @@ def update(screen):
 
 		else:
 			# Ré-initialisation des variables (round end)
-			_seconds = 29
+			_seconds = REFRESH_INTERVAL
 
+			screen.print_at("                                          ", 3, 25)
 			screen.print_at("fetching data()...", 3, 25, Screen.COLOUR_YELLOW)
 			screen.refresh()
 
-			__get_infos()
-
+			info_results = __get_infos()
+			if not info_results["success"]:
+				screen.print_at("                                          ", 3, 25)
+				screen.print_at(info_results["message"], 3, 25, Screen.COLOUR_YELLOW)
+			else:
+				screen.print_at("                                          ", 3, 25)
+				screen.print_at("Data fetched correctly.", 3, 25, Screen.COLOUR_YELLOW)
+			screen.refresh()
+			
 			# affiche la différence (si balance ++)
 			if __miner_infos["old_balance"] != "0":
 				# si aucune augmentation depuis la dernière maj, on affiche rien
@@ -165,26 +219,23 @@ def update(screen):
 				else:
 					# sinon on affiche la différence
 					screen.print_at("+" + str(
-						round(float(__miner_infos["balance"]) - float(__miner_infos["old_balance"]),
-							  8)) + " " + __MONEY, 50, 5, Screen.COLOUR_MAGENTA)
+						round(float(__miner_infos["balance"]) - float(__miner_infos["old_balance"]), 8)) + " " + __MONEY, 50, 5, Screen.COLOUR_MAGENTA)
 
 					_history.insert(0, "%0.8f" % (float(__miner_infos["balance"]) - float(__miner_infos["old_balance"])) + " @ " + '{:%Y-%m-%d %H:%M}'.format(datetime.now()) + "    ")
 
 					if len(_history) > 5:
 						_history = _history[:-1]
 					__miner_infos["old_balance"] = __miner_infos["balance"]
-
+					
 					if _beep:
 						winsound.Beep(550, 950)
-
 			else:
 				# La valeur de base doit être initialisée, si old_balance = 0
 				__miner_infos["old_balance"] = __miner_infos["balance"]
 
 			screen.print_at(__miner_infos["balance"] + " " + __MONEY, 30, 5, Screen.COLOUR_YELLOW, Screen.A_BOLD)
 			screen.print_at(str(int(float(__miner_infos["hashrate"]))) + " Mh/s         ", 30, 6, Screen.COLOUR_YELLOW)
-			screen.print_at(str(int(float(__miner_infos["lastReportedHash"]))) + " Mh/s    ", 30, 7,
-							Screen.COLOUR_YELLOW)
+			screen.print_at(str(int(float(__miner_infos["lastReportedHash"]))) + " Mh/s    ", 30, 7, Screen.COLOUR_YELLOW)
 
 			# Estimation des gains sur 1 jour en USD
 			screen.print_at(str(int(float(__miner_infos["USDday"]))) + " USD     ", 20, 19, Screen.COLOUR_CYAN)
@@ -193,8 +244,7 @@ def update(screen):
 			screen.print_at(str(int(float(__miner_infos["USDmonth"]))) + " USD     ", 30, 19, Screen.COLOUR_CYAN)
 
 			# Average Hashrate / 6h
-			screen.print_at(str(int(float(__miner_infos["averageHashrate6H"]))) + " Mh/s     ", 67, 7,
-							Screen.COLOUR_YELLOW)
+			screen.print_at(str(int(float(__miner_infos["averageHashrate6H"]))) + " Mh/s     ", 67, 7, Screen.COLOUR_YELLOW)
 
 			# Latest payments history
 			if __miner_infos["payments"][0] != "0":
@@ -205,13 +255,11 @@ def update(screen):
 				screen.print_at(__miner_infos["payments"][1] + " " + __MONEY + "  (~ " + est2 +" USD)", 45, 20, Screen.COLOUR_CYAN)
 
 			# Currency price in USD
-			screen.print_at(str(round(float(__money_ticker["%s_usd" % __MONEY.lower()]), 2)) + " USD        ", 45, 11,
-							Screen.COLOUR_RED)
+			screen.print_at(str(round(float(__money_ticker["%s_usd" % __MONEY.lower()]), 2)) + " USD        ", 45, 11, Screen.COLOUR_RED)
 
 			# Balance estimation in USD
 			screen.print_at("~ " + str(
-				round(float(__money_ticker["%s_usd" % __MONEY.lower()]) * float(__miner_infos["balance"]),
-					  4)) + " USD   ", 60, 11, Screen.COLOUR_RED)
+				round(float(__money_ticker["%s_usd" % __MONEY.lower()]) * float(__miner_infos["balance"]), 4)) + " USD   ", 60, 11, Screen.COLOUR_RED)
 
 			for i in range(len(_history)):
 				# Lignes de l'historique
@@ -220,10 +268,8 @@ def update(screen):
 			screen.print_at("update in : " + str(_seconds), 60, 3)
 
 		screen.refresh()
-		screen.print_at("                  ", 3, 25)
-
 		time.sleep(1)
-
+		
 		ev = screen.get_key()
 		if ev in (ord('Q'), ord('q')):
 			return
@@ -237,7 +283,7 @@ def update(screen):
 					_beep = True
 			else:
 				if ev in (ord('R'), ord('r')):
-					# Si, et seulement SI, moins de 3 refresh en 30 secondes
+					# Si, et seulement si, moins de 3 refresh en 30 secondes
 					if _refreshLimit < 2:
 						_seconds = 0
 						_refreshLimit = _refreshLimit + 1
@@ -246,5 +292,8 @@ def update(screen):
 
 		screen.refresh()
 
+# ---------------------------------------------------------------
+# RUN
+# ---------------------------------------------------------------
 
 Screen.wrapper(update)
