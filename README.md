@@ -1,12 +1,15 @@
 # Nanopool Sniffer
 
-By @Moh-Said
+By @[Moh-Said](https://github.com/Moh-Said)
 
 ## Change-log
 
-* **[1705.0.6]** 05-30-2017
+* **[1705.0.7]** 2017-05-30
+	* Added error handling to `__get_info()`
+	* Added refresh interval to config file
+* **[1705.0.6]** 2017-05-30
     * Add : Printing two latest payments
     * Fix : history printing bug
-* **[1705.0.5]** 05-28-2017
-    * Added config file support and generalised to all currencies
-    **by [@DarthJahus]**
+* **[1705.0.5]** 2017-05-28
+    * Added config file support and generalised to all currencies (by @[DarthJahus](https://github.com/DarthJahus))
+	
