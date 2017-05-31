@@ -5,11 +5,12 @@ from datetime import datetime
 import winsound
 import json
 
-__VERSION__ = "1705.0.7"
+__VERSION__ = "1705.0.8"
 
 # ---------------------------------------------------------------
 # CONFIG
 # ---------------------------------------------------------------
+
 
 # JSON file loader
 def load_file_json(file_name):
@@ -39,16 +40,21 @@ _baseURL_OTHER = "https://api.nanopool.org/v1/%s/approximated_earnings/" % __MON
 _cryptonatorAPI = "https://api.cryptonator.com/api/ticker/"  # $money$-usd/btc-usd
 _baseURL_PAYMENTS = "https://api.nanopool.org/v1/%s/payments/" % __MONEY.lower()
 
+# Chain Explorers
+__explorerURL_ETH = "https://api.etherscan.io/api?module=account&action=balance&address=%s&tag=latest" % _address
+
 # User-Agent
 _headers = {"User-Agent": "Mozilla/5.0 (Windows NT 6.1; WOW64; rv:40.0) Gecko/20100101 Firefox/40.1"}
 
 # INFOS dicts
-__miner_infos = dict(balance="0", old_balance="0", hashrate="0", old_hashrate="0", lastReportedHash="0", averageHashrate6H="0", USDmonth="0", USDday="0", payments = ["0", "0"])
+__miner_infos = dict(balance="0", old_balance="0", hashrate="0", old_hashrate="0", lastReportedHash="0", averageHashrate6H="0", USDmonth="0", USDday="0", payments=["0", "0"])
 __money_ticker = {"%s_usd" % __MONEY.lower(): 1}
+__address_infos = dict(balance="0")
 
 # ---------------------------------------------------------------
 # Functions
 # ---------------------------------------------------------------
+
 
 def __get_infos():
 	# Declarations des globales
@@ -86,8 +92,7 @@ def __get_infos():
 	except:
 		# error
 		errors.append({"success": False, "error": "Can not connect to the pool (address: %s)" % _baseURL_REPORTEDHASH})
-		
-	
+
 	# Other information
 	try:
 		req = requests.get(_baseURL_OTHER + __miner_infos["averageHashrate6H"], headers=_headers)
@@ -137,7 +142,21 @@ def __get_infos():
 	except:
 		# error
 		errors.append({"success": False, "error": "Can not connect to the pool (address: %s)" % _baseURL_REPORTEDHASH})
-	
+
+	# Blockchain explorers
+	if __MONEY.lower() == "eth":
+		try:
+			req = requests.get(__explorerURL_ETH, headers=_headers)
+			if req.status_code != 200:
+				# error
+				errors.append({"success": False, "error": "Etherscan.io returned error %s" % req.status_code})
+			else:
+				_JSON = req.json()
+				__address_infos["balance"] = "%0.2f" % (float(_JSON["result"]) / (10**18))
+		except:
+			# error
+			errors.append({"success": False, "error": "Can not connect to blockchain explorer"})
+
 	# Error handling
 	if len(errors) == 0:
 		result = {"success": True, "message": "yay!!!"}
@@ -244,7 +263,7 @@ def update(screen):
 			screen.print_at(str(int(float(__miner_infos["USDmonth"]))) + " USD     ", 30, 19, Screen.COLOUR_CYAN)
 
 			# Average Hashrate / 6h
-			screen.print_at(str(int(float(__miner_infos["averageHashrate6H"]))) + " Mh/s     ", 67, 7, Screen.COLOUR_YELLOW)
+			screen.print_at(str(int(float(__miner_infos["averageHashrate6H"]))) + " Mh/s     ", 66, 7, Screen.COLOUR_YELLOW)
 
 			# Latest payments history
 			if __miner_infos["payments"][0] != "0":
@@ -258,8 +277,14 @@ def update(screen):
 			screen.print_at(str(round(float(__money_ticker["%s_usd" % __MONEY.lower()]), 2)) + " USD        ", 45, 11, Screen.COLOUR_RED)
 
 			# Balance estimation in USD
-			screen.print_at("~ " + str(
-				round(float(__money_ticker["%s_usd" % __MONEY.lower()]) * float(__miner_infos["balance"]), 4)) + " USD   ", 60, 11, Screen.COLOUR_RED)
+			screen.print_at("~ " + str(round(float(__money_ticker["%s_usd" % __MONEY.lower()]) * float(__miner_infos["balance"]), 4)) + " USD   ", 60, 11, Screen.COLOUR_RED)
+
+			# address balance from blockchain explorer
+			# eth-only
+			if __MONEY.lower() == "eth":
+				__AD_estimation = float(__address_infos["balance"]) * float(__money_ticker["%s_usd" % __MONEY.lower()])
+				screen.print_at("%s Address Balance :" % __MONEY, 45, 14, Screen.COLOUR_WHITE, Screen.A_BOLD)
+				screen.print_at(__address_infos["balance"] + " " + __MONEY+ " (~ %0.2f USD)	" % __AD_estimation, 45, 15, Screen.COLOUR_YELLOW, Screen.A_BOLD)
 
 			for i in range(len(_history)):
 				# Lignes de l'historique
